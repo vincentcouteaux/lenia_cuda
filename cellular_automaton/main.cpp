@@ -77,8 +77,8 @@ int main(int, char**)
     // Our state
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
-    const int image_width = 512;
-    const int image_height = 512;
+    const int image_width = 1024;
+    const int image_height = 1024;
     //create texture
     GLuint tex_cudaResult;
     glGenTextures(1, &tex_cudaResult);
@@ -114,8 +114,8 @@ int main(int, char**)
     state.width = image_width;
     state.height = image_height;
     cudaMalloc((void**)&state.device_data, state.width * state.height * sizeof(float));
-    getGaussianBlob(state, 200, 200, 50);
-    //getSquare(state, 100, 100, 200, 200, 1.0f, 0.f);
+    //getGaussianBlob(state, 200, 200, 50);
+    getSquare(state, 300, 300, 600, 600, 1.0f, 0.f);
     //getRing(state, 22.5f, 22.5f, 15, 3.75);
 
     Matrix convKernel;
@@ -124,6 +124,7 @@ int main(int, char**)
     cudaMalloc((void**)&convKernel.device_data, convKernel.width * convKernel.height * sizeof(float));
     //getRing(convKernel, 22.5f, 22.5f, 15, 3.75);
     getRing(convKernel, image_width/2, image_height/2, 15, 3.75);
+    //getRing(convKernel, image_width/2, image_height/2, 30, 8.0f);
     float* shiftedKernel;
     cudaMalloc((void**)&shiftedKernel, convKernel.width * convKernel.height * sizeof(float));
     launch_fftShift2d(shiftedKernel, convKernel);

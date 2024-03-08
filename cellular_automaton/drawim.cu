@@ -7,6 +7,10 @@
 #include "Header.cuh"
 #include <stdio.h>
 
+#define BLOCK_SIDE 16
+#define THRD_PER_BLOCK (BLOCK_SIDE*BLOCK_SIDE)
+#define GRID_SIZE(x) ((x + THRD_PER_BLOCK - 1)/THRD_PER_BLOCK)
+
 // clamp x to range [a, b]
 __device__ float clamp(float x, float a, float b) { return max(a, min(b, x)); }
 
@@ -98,25 +102,25 @@ __global__ void ringKernel(Matrix m, float center_x, float center_y, float radiu
 }
 
 extern "C" void getRing(Matrix m, float center_x, float center_y, float radius, float sigma) {
-    dim3 block(16, 16, 1);
+    dim3 block(BLOCK_SIDE, BLOCK_SIDE, 1);
     dim3 grid(m.width/ block.x, m.height/ block.y, 1);
     ringKernel<<< grid, block >>> (m, center_x, center_y, radius, sigma*sigma);
 
 }
 
 extern "C" void launch_cudaProcess(unsigned int* g_odata, int imgw, int imgh, float sigma) {
-    dim3 block(16, 16, 1);
+    dim3 block(BLOCK_SIDE, BLOCK_SIDE, 1);
     dim3 grid(imgw / block.x, imgh / block.y, 1);
     //cudaProcess <<<grid, block, sbytes>>> (g_odata, imgw, frame_num);
     gaussianBlob<<<grid, block>>> (g_odata, imgw, 256, 256, sigma*sigma);
 }
 extern "C" void getGaussianBlob(Matrix m, float center_x, float center_y, float sigma) {
-    dim3 block(16, 16, 1);
+    dim3 block(BLOCK_SIDE, BLOCK_SIDE, 1);
     dim3 grid(m.width / block.x, m.height / block.y, 1);
     gaussianFloat <<< grid, block >>> (m.device_data, m.width, center_x, center_y, sigma*sigma);
 }
 extern "C" void getSquare(Matrix m, int x0, int y0, int x1, int y1, float value_inside, float value_outside) {
-    dim3 block(16, 16, 1);
+    dim3 block(BLOCK_SIDE, BLOCK_SIDE, 1);
     dim3 grid(m.width / block.x, m.height / block.y, 1);
     squareFloat<<< grid, block >>> (m.device_data, m.width, x0, y0, x1, y1, value_inside, value_outside);
 
@@ -127,7 +131,7 @@ extern "C" void getSquare(Matrix m, int x0, int y0, int x1, int y1, float value_
 }
 
 extern "C" void launch_toRGB(unsigned int* g_odata, Matrix m) {
-    dim3 block(16, 16, 1);
+    dim3 block(BLOCK_SIDE, BLOCK_SIDE, 1);
     dim3 grid(m.width / block.x, m.height / block.y, 1);
     toRGB <<<grid, block>>> (g_odata, m);
 }
@@ -141,10 +145,13 @@ __global__ void multiplyComplex(float2* result, float2* vec1, float2* vec2, int 
     }
 }
 extern "C" void launch_multiplyComplex(float2 * result, float2 * vec1, float2 * vec2, int size, float scale) {
-    multiplyComplex<<<256, size/256>>>(result, vec1, vec2, size, scale);
+    //multiplyComplex<<<256, size/256>>>(result, vec1, vec2, size, scale);
+    //multiplyComplex<<<(size + THRD_PER_BLOCK - 1)/THRD_PER_BLOCK, THRD_PER_BLOCK>>>(result, vec1, vec2, size, scale);
+    multiplyComplex<<<GRID_SIZE(size), THRD_PER_BLOCK>>>(result, vec1, vec2, size, scale);
+    //printf("BBB %d, %d", GRID_SIZE(size), THRD_PER_BLOCK);
     cudaError_t cudaStatus = cudaGetLastError();
     if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+        fprintf(stderr, "AAA multiplyComplex launch failed: %s\n", cudaGetErrorString(cudaStatus));
     }
     cudaStatus = cudaDeviceSynchronize();
     if (cudaStatus != cudaSuccess) {
@@ -166,7 +173,8 @@ __global__ void updateState(float* stateData, float* resultConv, int size, float
 }
 extern "C" void launch_updateState(Matrix state, float* resultConv, float peakValue, float std, float elapsedTime, float step) {
     int size = state.width * state.height;
-    updateState<<<256, size / 256>>>(state.device_data, resultConv, size, peakValue, std*std, elapsedTime * step);
+    //updateState<<<256, size / 256>>>(state.device_data, resultConv, size, peakValue, std*std, elapsedTime * step);
+    updateState<<<GRID_SIZE(size), THRD_PER_BLOCK>>>(state.device_data, resultConv, size, peakValue, std * std, elapsedTime * step);
 }
 
 __global__ void fftShift2d(float* result, Matrix toShift) {
@@ -186,15 +194,15 @@ __global__ void fftShift2d(float* result, Matrix toShift) {
     }
 }
 extern "C" void launch_fftShift2d(float* result, Matrix toShift) {
-    dim3 block(16, 16, 1);
+    dim3 block(BLOCK_SIDE, BLOCK_SIDE, 1);
     dim3 grid(toShift.width / block.x, toShift.height / block.y / 2, 1);
     fftShift2d<<<grid, block>>>(result, toShift);
     cudaError_t cudaStatus = cudaGetLastError();
     if (cudaStatus != cudaSuccess) {
-        fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+        fprintf(stderr, "fftShift launch failed: %s\n", cudaGetErrorString(cudaStatus));
     }
     cudaStatus = cudaDeviceSynchronize();
     if (cudaStatus != cudaSuccess) {
-        printf("cudaDeviceSynchronize returned error code %d after launching multiplyComplex!\n", cudaStatus);
+        printf("cudaDeviceSynchronize returned error code %d after launching fftShift!\n", cudaStatus);
     }
 }
