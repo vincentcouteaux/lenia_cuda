@@ -206,3 +206,67 @@ extern "C" void launch_fftShift2d(float* result, Matrix toShift) {
         printf("cudaDeviceSynchronize returned error code %d after launching fftShift!\n", cudaStatus);
     }
 }
+
+__global__ void reduceSum(float* output, float* values, int size) {
+    const int block_index = blockDim.x * blockIdx.x; // +threadIdx.x;
+    extern __shared__ float smem[];
+    smem[threadIdx.x] = values[block_index + threadIdx.x];
+    __syncthreads();
+    int offset = 2 * threadIdx.x;
+    for (int gap = 1; gap < blockDim.x; gap <<= 1) {
+        if (offset < blockDim.x) {
+            smem[offset] += smem[offset + gap];
+            offset <<= 1;
+			__syncthreads();
+        }
+    }
+    output[blockIdx.x] = smem[0];
+}
+
+float sumCpu(float* values, int size) {
+    float result = 0;
+    for (int i = 0; i < size; i++) {
+        result += values[i];
+    }
+    return result;
+}
+
+extern "C" float launch_reduceSum(float* values, int size) {
+    const int threads_per_block = 256;
+    float* toReduce = values;
+    int curSize = size;
+    int num_blocks = (size + threads_per_block - 1)/threads_per_block;
+
+	float* blockSums;
+	cudaMalloc((void**)&blockSums, num_blocks*sizeof(float));
+
+    while (curSize > 1) {
+        num_blocks = (curSize + threads_per_block - 1) / threads_per_block;
+		reduceSum<<<num_blocks, threads_per_block, threads_per_block*sizeof(float) >>>(blockSums, toReduce, curSize);
+		cudaError_t cudaStatus = cudaGetLastError();
+		if (cudaStatus != cudaSuccess) {
+			fprintf(stderr, "reduceSum launch failed: %s\n", cudaGetErrorString(cudaStatus));
+		}
+		cudaStatus = cudaDeviceSynchronize();
+		if (cudaStatus != cudaSuccess) {
+			printf("cudaDeviceSynchronize returned error code %d after launching reduceSum!\n", cudaStatus);
+		}
+		//printf("NUM BLOCKS %d, THRD_PER_BLOCK %d\n", num_blocks, threads_per_block);
+        toReduce = blockSums;
+        curSize = num_blocks;
+    }
+    float output;
+    cudaMemcpy(&output, blockSums, sizeof(float), cudaMemcpyDeviceToHost);
+    return output;
+    //float* blockSumsCPU = (float*)malloc(num_blocks*sizeof(float));
+    //cudaMemcpy(blockSumsCPU, blockSums, num_blocks * sizeof(float), cudaMemcpyDeviceToHost);
+
+    /*
+	printf("RESULT SUM %f\n", blockSumsCPU[0]);
+    
+    float* valuesCPU = (float*)malloc(size * sizeof(float));
+    cudaMemcpy(valuesCPU, values, size * sizeof(float), cudaMemcpyDeviceToHost);
+    float sumval = sumCpu(valuesCPU, size);
+	printf("RESULT SUM CPU %f\n", sumval);
+    */
+}

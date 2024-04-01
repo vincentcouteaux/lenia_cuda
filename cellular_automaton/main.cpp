@@ -20,6 +20,7 @@
 
 #include "Header.cuh"
 #include "matrix.cuh"
+#include "tests.cuh"
 #include <cuda_gl_interop.h>
 //#include <cuComplex.h>
 
@@ -38,9 +39,31 @@ static void glfw_error_callback(int error, const char* description)
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
 
+struct KernelParams {
+    float ring_radius;
+    float ring_sigma;
+    int width;
+    int height;
+};
+
+void compute_kernel(Matrix convKernel, float* shiftedKernel,
+                    float2* kernelSpectrum, float* kernel_sum,
+                    KernelParams params, cufftHandle fftPlanFwd) {
+    printf("line1");
+    getRing(convKernel, params.width/2, params.height/2, params.ring_radius, params.ring_sigma);
+    printf("line2");
+    *kernel_sum = launch_reduceSum(convKernel.device_data, params.width*params.height);
+    printf("line3");
+	launch_fftShift2d(shiftedKernel, convKernel);
+    printf("line4");
+    cufftExecR2C(fftPlanFwd, (cufftReal*)shiftedKernel, (cufftComplex*)kernelSpectrum);
+    printf("line5");
+}
+
 // Main code
 int main(int, char**)
 {
+    test_sum();
     glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit())
         return 1;
@@ -77,8 +100,8 @@ int main(int, char**)
     // Our state
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
-    const int image_width = 1024;
-    const int image_height = 1024;
+    const int image_width = 2048;//1024;
+    const int image_height = 2048;//1024;
     //create texture
     GLuint tex_cudaResult;
     glGenTextures(1, &tex_cudaResult);
@@ -122,12 +145,15 @@ int main(int, char**)
     convKernel.width = image_width;
     convKernel.height = image_height;
     cudaMalloc((void**)&convKernel.device_data, convKernel.width * convKernel.height * sizeof(float));
-    //getRing(convKernel, 22.5f, 22.5f, 15, 3.75);
-    getRing(convKernel, image_width/2, image_height/2, 15, 3.75);
-    //getRing(convKernel, image_width/2, image_height/2, 30, 8.0f);
+    KernelParams kernelParams;
+    kernelParams.ring_radius = 30.0f;
+    kernelParams.ring_sigma = 8.0f;
+    kernelParams.width = image_width;
+    kernelParams.height = image_height;
+    float kernel_sum = 0.0f;
+    //printf("KERNEL SUM: %f", kernel_sum);
     float* shiftedKernel;
     cudaMalloc((void**)&shiftedKernel, convKernel.width * convKernel.height * sizeof(float));
-    launch_fftShift2d(shiftedKernel, convKernel);
 
     //prepare spectrum pointers
     float2* kernelSpectrum;
@@ -145,8 +171,7 @@ int main(int, char**)
     cufftPlan2d(&fftPlanFwd, image_height, image_width, CUFFT_R2C);
     cufftPlan2d(&fftPlanInv, image_height, image_width, CUFFT_C2R);
 
-    //cufftExecR2C(fftPlanFwd, (cufftReal*)convKernel.device_data, (cufftComplex*)kernelSpectrum);
-    cufftExecR2C(fftPlanFwd, (cufftReal*)shiftedKernel, (cufftComplex*)kernelSpectrum);
+    compute_kernel(convKernel, shiftedKernel, kernelSpectrum, &kernel_sum, kernelParams, fftPlanFwd);
 
     cudaError_t cudaStatus = cudaDeviceSynchronize();
     if (cudaStatus != cudaSuccess) {
@@ -194,7 +219,8 @@ int main(int, char**)
 		cufftExecR2C(fftPlanFwd, (cufftReal*)state.device_data, (cufftComplex*)dataSpectrum);
 
 		launch_multiplyComplex(resultSpectrum, kernelSpectrum, dataSpectrum,
-							   image_width * (image_height / 2 + 1), image_width*image_height*600);
+							   //image_width * (image_height / 2 + 1), image_width*image_height*600);
+							   image_width * (image_height / 2 + 1), image_width*image_height*kernel_sum);
 		//TODO compute actual sum of the kernel (here it's about 600)
         cufftExecC2R(fftPlanInv, (cufftComplex*)resultSpectrum, (cufftReal*)resultConv); //state.device_data);
         launch_updateState(state, resultConv, .5, .15, 1.f/io.Framerate, speed);

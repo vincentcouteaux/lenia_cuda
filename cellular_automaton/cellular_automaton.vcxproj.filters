@@ -5,6 +5,7 @@
     <CudaCompile Include="drawim.cu" />
     <CudaCompile Include="conv.cu" />
     <CudaCompile Include="matrix.cu" />
+    <CudaCompile Include="tests.cu" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="imgui">
@@ -41,6 +42,7 @@
     </ClInclude>
     <ClInclude Include="Header.cuh" />
     <ClInclude Include="matrix.cuh" />
+    <ClInclude Include="tests.cuh" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="imgui.cpp">

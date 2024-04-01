@@ -15,5 +15,6 @@ extern "C" void getRing(Matrix m, float center_x, float center_y, float radius, 
 extern "C" void launch_multiplyComplex(float2 * result, float2 * vec1, float2 * vec2, int size, float scale);
 extern "C" void launch_updateState(Matrix state, float* resultConv, float peakValue, float std2, float elapsedTime, float step);
 extern "C" void launch_fftShift2d(float* result, Matrix toShift);
+extern "C" float launch_reduceSum(float* values, int size);
 
 #endif // !__HEADER__

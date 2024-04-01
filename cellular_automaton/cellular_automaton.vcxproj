@@ -81,11 +81,13 @@
   <ItemGroup>
     <CudaCompile Include="conv.cu" />
     <CudaCompile Include="drawim.cu" />
+    <CudaCompile Include="tests.cu" />
     <CudaCompile Include="kernel.cu" />
     <CudaCompile Include="matrix.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Header.cuh" />
+    <ClInclude Include="tests.cuh" />
     <ClInclude Include="imconfig.h" />
     <ClInclude Include="imgui.h" />
     <ClInclude Include="imgui_impl_glfw.h" />
