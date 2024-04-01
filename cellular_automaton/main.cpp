@@ -45,19 +45,20 @@ struct KernelParams {
     int width;
     int height;
 };
+/*
+bool areParamsEquals(KernelParams params1, KernelParams params2) {
+    return (params1.ring_radius == params2.ring_radius &&
+            params1.ring_sigma == params
+}
+*/
 
 void compute_kernel(Matrix convKernel, float* shiftedKernel,
                     float2* kernelSpectrum, float* kernel_sum,
                     KernelParams params, cufftHandle fftPlanFwd) {
-    printf("line1");
-    getRing(convKernel, params.width/2, params.height/2, params.ring_radius, params.ring_sigma);
-    printf("line2");
+    getRing(convKernel, params.width/2.0f, params.height/2.0f, params.ring_radius, params.ring_sigma);
     *kernel_sum = launch_reduceSum(convKernel.device_data, params.width*params.height);
-    printf("line3");
 	launch_fftShift2d(shiftedKernel, convKernel);
-    printf("line4");
     cufftExecR2C(fftPlanFwd, (cufftReal*)shiftedKernel, (cufftComplex*)kernelSpectrum);
-    printf("line5");
 }
 
 // Main code
@@ -150,6 +151,8 @@ int main(int, char**)
     kernelParams.ring_sigma = 8.0f;
     kernelParams.width = image_width;
     kernelParams.height = image_height;
+
+    KernelParams newParams = kernelParams;
     float kernel_sum = 0.0f;
     //printf("KERNEL SUM: %f", kernel_sum);
     float* shiftedKernel;
@@ -201,10 +204,23 @@ int main(int, char**)
 
             ImGui::Begin("Params");                          // Create a window called "Hello, world!" and append into it.
 
-            ImGui::SliderFloat("Speed", &speed, 0.1f, 10.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
+            ImGui::SliderFloat("Speed", &speed, 0.1f, 10.0f);
+
+            ImGui::SliderFloat("Kernel radius", &newParams.ring_radius, 15.0f, 100.0f);
+
+            ImGui::SliderFloat("Ring sigma", &newParams.ring_sigma, 3.0f, 15.0f);
 
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
             ImGui::End();
+        }
+
+        if (newParams.ring_radius != kernelParams.ring_radius) {
+            kernelParams.ring_radius = newParams.ring_radius;
+			compute_kernel(convKernel, shiftedKernel, kernelSpectrum, &kernel_sum, kernelParams, fftPlanFwd);
+        }
+        if (newParams.ring_sigma != kernelParams.ring_sigma ) {
+            kernelParams.ring_sigma = newParams.ring_sigma;
+			compute_kernel(convKernel, shiftedKernel, kernelSpectrum, &kernel_sum, kernelParams, fftPlanFwd);
         }
 
         // Rendering
@@ -219,13 +235,11 @@ int main(int, char**)
 		cufftExecR2C(fftPlanFwd, (cufftReal*)state.device_data, (cufftComplex*)dataSpectrum);
 
 		launch_multiplyComplex(resultSpectrum, kernelSpectrum, dataSpectrum,
-							   //image_width * (image_height / 2 + 1), image_width*image_height*600);
 							   image_width * (image_height / 2 + 1), image_width*image_height*kernel_sum);
-		//TODO compute actual sum of the kernel (here it's about 600)
         cufftExecC2R(fftPlanInv, (cufftComplex*)resultSpectrum, (cufftReal*)resultConv); //state.device_data);
         launch_updateState(state, resultConv, .5, .15, 1.f/io.Framerate, speed);
 
-        launch_toRGB(cuda_dest_resource, state);
+	    launch_toRGB(cuda_dest_resource, state);
         //DEBUG
         //convKernel.device_data = shiftedKernel;
         //launch_toRGB(cuda_dest_resource, convKernel);
