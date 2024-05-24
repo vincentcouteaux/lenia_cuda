@@ -108,6 +108,58 @@ extern "C" void getRing(Matrix m, float center_x, float center_y, float radius, 
 
 }
 
+__global__ void computeRings(Matrix m, float center_x, float center_y, int n_rings, float* radiuses, float* sigma2s, float* coefs) {
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int bw = blockDim.x;
+    int bh = blockDim.y;
+    int x = blockIdx.x * bw + tx;
+    int y = blockIdx.y * bh + ty;
+    float distx = (center_x - x);
+    distx *= distx;
+    float disty = (center_y - y);
+    disty *= disty;
+    const float dist = sqrt(distx + disty);
+    float out = 0;
+    for (int i = 0; i < n_rings; i++) {
+        const float dist2ring = dist - radiuses[i];
+        out += coefs[i] * __expf(-(dist2ring*dist2ring) / sigma2s[i]);
+    }
+    m.device_data[y * m.width + x] = out;
+}
+
+extern "C" void launchRings(Matrix m, float center_x, float center_y, KernelParams ringParams) {
+    float* sigma2s_h = (float*) malloc(ringParams.n_rings*sizeof(float));
+    for (int i = 0; i < ringParams.n_rings; i++) {
+        sigma2s_h[i] = ringParams.ring_sigmas[i]*ringParams.ring_sigmas[i];
+    }
+    float* radiuses_d;
+    float* sigma2s_d;
+    float* coefs_d;
+    cudaMalloc((void**)&radiuses_d, ringParams.n_rings * sizeof(float));
+    cudaMemcpy(radiuses_d, ringParams.ring_radiuses, ringParams.n_rings * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&sigma2s_d, ringParams.n_rings * sizeof(float));
+    cudaMemcpy(sigma2s_d, sigma2s_h, ringParams.n_rings * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&coefs_d, ringParams.n_rings * sizeof(float));
+    cudaMemcpy(coefs_d, ringParams.ring_coefs, ringParams.n_rings * sizeof(float), cudaMemcpyHostToDevice);
+
+    dim3 block(BLOCK_SIDE, BLOCK_SIDE, 1);
+    dim3 grid(m.width/ block.x, m.height/ block.y, 1);
+    computeRings <<< grid, block >>> (m, center_x, center_y, ringParams.n_rings, radiuses_d, sigma2s_d, coefs_d);
+    cudaError_t cudaStatus = cudaGetLastError();
+    if (cudaStatus != cudaSuccess) {
+        fprintf(stderr, "computeRings launch failed: %s\n", cudaGetErrorString(cudaStatus));
+    }
+    cudaStatus = cudaDeviceSynchronize();
+    if (cudaStatus != cudaSuccess) {
+        printf("cudaDeviceSynchronize returned error code %d after launching computeRings!\n", cudaStatus);
+    }
+    cudaFree(radiuses_d);
+    cudaFree(sigma2s_d);
+    cudaFree(coefs_d);
+    free(sigma2s_h);
+}
+
 extern "C" void launch_cudaProcess(unsigned int* g_odata, int imgw, int imgh, float sigma) {
     dim3 block(BLOCK_SIDE, BLOCK_SIDE, 1);
     dim3 grid(imgw / block.x, imgh / block.y, 1);
@@ -257,16 +309,6 @@ extern "C" float launch_reduceSum(float* values, int size) {
     }
     float output;
     cudaMemcpy(&output, blockSums, sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(blockSums);
     return output;
-    //float* blockSumsCPU = (float*)malloc(num_blocks*sizeof(float));
-    //cudaMemcpy(blockSumsCPU, blockSums, num_blocks * sizeof(float), cudaMemcpyDeviceToHost);
-
-    /*
-	printf("RESULT SUM %f\n", blockSumsCPU[0]);
-    
-    float* valuesCPU = (float*)malloc(size * sizeof(float));
-    cudaMemcpy(valuesCPU, values, size * sizeof(float), cudaMemcpyDeviceToHost);
-    float sumval = sumCpu(valuesCPU, size);
-	printf("RESULT SUM CPU %f\n", sumval);
-    */
 }

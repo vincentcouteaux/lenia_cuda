@@ -6,6 +6,15 @@
 #include "cuda_runtime.h"
 #include "matrix.cuh"
 
+struct KernelParams {
+    int n_rings;
+    float* ring_radiuses;
+    float* ring_sigmas;
+    float* ring_coefs;
+    int width;
+    int height;
+};
+
 int main_();
 extern "C" void launch_cudaProcess(unsigned int* g_odata, int imgw, int imgh, float sigma);
 extern "C" void getGaussianBlob(Matrix m, float center_x, float center_y, float sigma);
@@ -16,5 +25,6 @@ extern "C" void launch_multiplyComplex(float2 * result, float2 * vec1, float2 * 
 extern "C" void launch_updateState(Matrix state, float* resultConv, float peakValue, float std2, float elapsedTime, float step);
 extern "C" void launch_fftShift2d(float* result, Matrix toShift);
 extern "C" float launch_reduceSum(float* values, int size);
+extern "C" void launchRings(Matrix m, float center_x, float center_y, KernelParams ringParams);
 
 #endif // !__HEADER__

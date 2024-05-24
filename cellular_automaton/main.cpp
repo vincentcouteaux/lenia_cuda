@@ -39,23 +39,12 @@ static void glfw_error_callback(int error, const char* description)
     fprintf(stderr, "GLFW Error %d: %s\n", error, description);
 }
 
-struct KernelParams {
-    float ring_radius;
-    float ring_sigma;
-    int width;
-    int height;
-};
-/*
-bool areParamsEquals(KernelParams params1, KernelParams params2) {
-    return (params1.ring_radius == params2.ring_radius &&
-            params1.ring_sigma == params
-}
-*/
 
 void compute_kernel(Matrix convKernel, float* shiftedKernel,
                     float2* kernelSpectrum, float* kernel_sum,
                     KernelParams params, cufftHandle fftPlanFwd) {
-    getRing(convKernel, params.width/2.0f, params.height/2.0f, params.ring_radius, params.ring_sigma);
+    //getRing(convKernel, params.width/2.0f, params.height/2.0f, params.ring_radiuses[0], params.ring_sigmas[0]);
+    launchRings(convKernel, params.width / 2.0f, params.height / 2.0f, params);
     *kernel_sum = launch_reduceSum(convKernel.device_data, params.width*params.height);
 	launch_fftShift2d(shiftedKernel, convKernel);
     cufftExecR2C(fftPlanFwd, (cufftReal*)shiftedKernel, (cufftComplex*)kernelSpectrum);
@@ -147,12 +136,23 @@ int main(int, char**)
     convKernel.height = image_height;
     cudaMalloc((void**)&convKernel.device_data, convKernel.width * convKernel.height * sizeof(float));
     KernelParams kernelParams;
-    kernelParams.ring_radius = 30.0f;
-    kernelParams.ring_sigma = 8.0f;
+    kernelParams.n_rings = 3;
+    kernelParams.ring_radiuses = (float*)malloc(kernelParams.n_rings * sizeof(float));
+    //kernelParams.ring_sigma = 8.0f;
+    kernelParams.ring_radiuses[0] = 30.0f;
+    kernelParams.ring_radiuses[1] = 70.0f;
+    kernelParams.ring_radiuses[2] = 110.0f;
+    kernelParams.ring_sigmas = (float*)malloc(kernelParams.n_rings * sizeof(float));
+    kernelParams.ring_sigmas[0] = 8.0f;
+    kernelParams.ring_sigmas[1] = 8.0f;
+    kernelParams.ring_sigmas[2] = 8.0f;
+    kernelParams.ring_coefs = (float*)malloc(kernelParams.n_rings * sizeof(float));
+    kernelParams.ring_coefs[0] = 1.0f;
+    kernelParams.ring_coefs[1] = 0.5f;
+    kernelParams.ring_coefs[2] = 0.2f;
     kernelParams.width = image_width;
     kernelParams.height = image_height;
 
-    KernelParams newParams = kernelParams;
     float kernel_sum = 0.0f;
     //printf("KERNEL SUM: %f", kernel_sum);
     float* shiftedKernel;
@@ -197,8 +197,8 @@ int main(int, char**)
         ImGui::NewFrame();
 
         //ImGui::ShowDemoWindow(&show_demo_window);
+        bool recompute = false;
 
-        // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
         {
             static float f = 0.0f;
 
@@ -206,21 +206,23 @@ int main(int, char**)
 
             ImGui::SliderFloat("Speed", &speed, 0.1f, 10.0f);
 
-            ImGui::SliderFloat("Kernel radius", &newParams.ring_radius, 15.0f, 100.0f);
-
-            ImGui::SliderFloat("Ring sigma", &newParams.ring_sigma, 3.0f, 15.0f);
+            for (int ringIndex=0; ringIndex < kernelParams.n_rings; ringIndex++) {
+                if (true) {
+                    char label_radius[] = "Kernel radius #0";
+                    sprintf(label_radius, "Kernel radius #%d", ringIndex);
+                    recompute = ImGui::SliderFloat(label_radius, &kernelParams.ring_radiuses[ringIndex], 15.0f, 100.0f) || recompute;
+                    char label_sigma[] = "Ring sigma #0";
+                    sprintf(label_sigma, "Ring sigma #%d", ringIndex);
+                    recompute = ImGui::SliderFloat(label_sigma, &kernelParams.ring_sigmas[ringIndex], 3.0f, 15.0f) || recompute;
+                }
+            }
 
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
             ImGui::End();
         }
 
-        if (newParams.ring_radius != kernelParams.ring_radius) {
-            kernelParams.ring_radius = newParams.ring_radius;
-			compute_kernel(convKernel, shiftedKernel, kernelSpectrum, &kernel_sum, kernelParams, fftPlanFwd);
-        }
-        if (newParams.ring_sigma != kernelParams.ring_sigma ) {
-            kernelParams.ring_sigma = newParams.ring_sigma;
-			compute_kernel(convKernel, shiftedKernel, kernelSpectrum, &kernel_sum, kernelParams, fftPlanFwd);
+        if (recompute) {
+            compute_kernel(convKernel, shiftedKernel, kernelSpectrum, &kernel_sum, kernelParams, fftPlanFwd);
         }
 
         // Rendering
@@ -278,9 +280,6 @@ int main(int, char**)
 
         glfwSwapBuffers(window);
     }
-#ifdef __EMSCRIPTEN__
-    EMSCRIPTEN_MAINLOOP_END;
-#endif
 
     // Cleanup
     ImGui_ImplOpenGL3_Shutdown();
@@ -289,6 +288,14 @@ int main(int, char**)
 
     glfwDestroyWindow(window);
     glfwTerminate();
+
+    cudaFree(cuda_dest_resource);
+    cudaFree(state.device_data);
+    cudaFree(convKernel.device_data);
+    cudaFree(shiftedKernel);
+    cudaFree(dataSpectrum);
+    cudaFree(resultSpectrum);
+    cudaFree(resultConv);
 
     return 0;
 }
