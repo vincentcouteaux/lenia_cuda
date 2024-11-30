@@ -180,6 +180,7 @@ int main(int, char**)
     if (cudaStatus != cudaSuccess) {
         printf("cudaDeviceSynchronize returned error code %d after launching C2R!\n", cudaStatus);
     }
+	bool showKernel = false;
 
     // Main loop
     while (!glfwWindowShouldClose(window))
@@ -206,11 +207,13 @@ int main(int, char**)
 
             ImGui::SliderFloat("Speed", &speed, 0.1f, 10.0f);
 
+            ImGui::Checkbox("Show kernel", &showKernel);
+
             for (int ringIndex=0; ringIndex < kernelParams.n_rings; ringIndex++) {
                 if (true) {
                     char label_radius[] = "Kernel radius #0";
                     sprintf(label_radius, "Kernel radius #%d", ringIndex);
-                    recompute = ImGui::SliderFloat(label_radius, &kernelParams.ring_radiuses[ringIndex], 15.0f, 100.0f) || recompute;
+                    recompute = ImGui::SliderFloat(label_radius, &kernelParams.ring_radiuses[ringIndex], 15.0f, 200.0f) || recompute;
                     char label_sigma[] = "Ring sigma #0";
                     sprintf(label_sigma, "Ring sigma #%d", ringIndex);
                     recompute = ImGui::SliderFloat(label_sigma, &kernelParams.ring_sigmas[ringIndex], 3.0f, 15.0f) || recompute;
@@ -241,10 +244,11 @@ int main(int, char**)
         cufftExecC2R(fftPlanInv, (cufftComplex*)resultSpectrum, (cufftReal*)resultConv); //state.device_data);
         launch_updateState(state, resultConv, .5, .15, 1.f/io.Framerate, speed);
 
-	    launch_toRGB(cuda_dest_resource, state);
         //DEBUG
         //convKernel.device_data = shiftedKernel;
         //launch_toRGB(cuda_dest_resource, convKernel);
+	    //launch_toRGB(cuda_dest_resource, state);
+	    launch_toRGB(cuda_dest_resource, showKernel ? convKernel : state);
 
         frame_num++;
         //Transfer cuda computed pixel in texture
